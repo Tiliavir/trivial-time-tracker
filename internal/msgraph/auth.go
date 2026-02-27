@@ -10,21 +10,13 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const (
-	// tenantID is the Microsoft common tenant (works for any org/personal account).
-	tenantID = "common"
-	// clientID is a well-known Microsoft public client app ID (Azure CLI).
-	// It does not require a secret and works for device code flow.
-	// For production deployments, register your own Azure app and replace this value.
-	clientID = "04b07795-8542-4c4a-95af-30b2c573d5ab"
-
-	deviceCodeEndpoint = "https://login.microsoftonline.com/" + tenantID + "/oauth2/v2.0/devicecode"
-	tokenEndpoint      = "https://login.microsoftonline.com/" + tenantID + "/oauth2/v2.0/token"
-)
-
 var requiredScopes = []string{
 	"https://graph.microsoft.com/Calendars.Read",
 	"offline_access",
+}
+
+func msEndpoint(tenantID, path string) string {
+	return "https://login.microsoftonline.com/" + tenantID + "/oauth2/v2.0/" + path
 }
 
 // tokenFilePath returns the path to the stored token file.
@@ -36,14 +28,15 @@ func tokenFilePath() (string, error) {
 	return filepath.Join(home, ".ttt", "auth", "msgraph_tokens.json"), nil
 }
 
-// oauth2Config returns the oauth2.Config for Microsoft Graph.
-func oauth2Config() *oauth2.Config {
+// oauth2Config returns the oauth2.Config for Microsoft Graph using the
+// provided tenant and client IDs.
+func oauth2Config(tenantID, clientID string) *oauth2.Config {
 	return &oauth2.Config{
 		ClientID: clientID,
 		Scopes:   requiredScopes,
 		Endpoint: oauth2.Endpoint{
-			DeviceAuthURL: deviceCodeEndpoint,
-			TokenURL:      tokenEndpoint,
+			DeviceAuthURL: msEndpoint(tenantID, "devicecode"),
+			TokenURL:      msEndpoint(tenantID, "token"),
 			AuthStyle:     oauth2.AuthStyleInParams,
 		},
 	}
@@ -96,8 +89,9 @@ func saveToken(tok *oauth2.Token) error {
 // GetHTTPClient returns an authenticated HTTP client for Microsoft Graph.
 // It loads saved tokens, refreshes them if needed, or initiates a new
 // device code flow if no valid token is available.
-func GetHTTPClient(ctx context.Context) (*oauth2.Token, *oauth2.Config, error) {
-	cfg := oauth2Config()
+// tenantID and clientID are read from ~/.ttt/config.json.
+func GetHTTPClient(ctx context.Context, tenantID, clientID string) (*oauth2.Token, *oauth2.Config, error) {
+	cfg := oauth2Config(tenantID, clientID)
 
 	tok, err := loadToken()
 	if err != nil {

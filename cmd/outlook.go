@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Tiliavir/trivial-time-tracker/internal/config"
 	"github.com/Tiliavir/trivial-time-tracker/internal/msgraph"
 	"github.com/Tiliavir/trivial-time-tracker/internal/storage"
 	"github.com/Tiliavir/trivial-time-tracker/internal/timecalc"
@@ -41,12 +42,27 @@ func init() {
 	outlookSyncCmd.Flags().StringVar(&outlookSyncDate, "date", "", "Sync a specific date (YYYY-MM-DD)")
 	outlookSyncCmd.Flags().BoolVar(&outlookSyncToday, "today", false, "Sync only today (default)")
 	outlookSyncCmd.Flags().BoolVar(&outlookSyncDryRun, "dry-run", false, "Print planned operations without writing")
-	outlookSyncCmd.Flags().StringVar(&outlookSyncProject, "project", "Meetings", "Default project name for imported events")
-	outlookSyncCmd.Flags().StringVar(&outlookSyncTZ, "timezone", "", "IANA timezone for event times (e.g. Europe/Berlin)")
+	outlookSyncCmd.Flags().StringVar(&outlookSyncProject, "project", "", "Default project name for imported events (overrides config)")
+	outlookSyncCmd.Flags().StringVar(&outlookSyncTZ, "timezone", "", "IANA timezone for event times, e.g. Europe/Berlin (overrides config)")
 	outlookCmd.AddCommand(outlookSyncCmd)
 }
 
 func runOutlookSync(cmd *cobra.Command, args []string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: config error: %v\n", err)
+	}
+
+	// CLI flags override config values; empty flag value falls back to config.
+	project := outlookSyncProject
+	if project == "" {
+		project = cfg.Outlook.DefaultProject
+	}
+	timezone := outlookSyncTZ
+	if timezone == "" {
+		timezone = cfg.Outlook.Timezone
+	}
+
 	now := time.Now()
 	var from, to time.Time
 
@@ -96,8 +112,6 @@ func runOutlookSync(cmd *cobra.Command, args []string) error {
 		os.Exit(2)
 	}
 
-	timezone := outlookSyncTZ
-
 	dryTag := ""
 	if outlookSyncDryRun {
 		dryTag = " [dry-run]"
@@ -108,13 +122,13 @@ func runOutlookSync(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	tok, cfg, err := msgraph.GetHTTPClient(ctx)
+	tok, oauthCfg, err := msgraph.GetHTTPClient(ctx, cfg.Outlook.TenantID, cfg.Outlook.ClientID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	client := msgraph.NewClient(ctx, tok, cfg)
+	client := msgraph.NewClient(ctx, tok, oauthCfg)
 
 	events, err := client.GetCalendarView(ctx, from, to, timezone)
 	if err != nil {
@@ -127,7 +141,7 @@ func runOutlookSync(cmd *cobra.Command, args []string) error {
 		From:    from,
 		To:      to,
 		DryRun:  outlookSyncDryRun,
-		Project: outlookSyncProject,
+		Project: project,
 	}
 
 	result, err := msgraph.SyncEvents(events, opts, timezone)
