@@ -1,130 +1,163 @@
 <!DOCTYPE html>
+<!--
+  ttt – Trivial Time Tracker | Interactive Browser Demo
+  ======================================================
+  This is a DEMO, not the real ttt implementation.
+  It simulates the ttt CLI inside the browser using vanilla JS.
+  Real ttt stores files in ~/.ttt/; this demo uses an in-memory
+  virtual filesystem backed by localStorage.
+
+  Architecture:
+    StorageModule  – virtual ~/.ttt/ filesystem + localStorage persistence
+    TreeModule     – file-tree rendering (right-top panel)
+    EditorModule   – Monaco Editor wrapper (right-bottom panel)
+    TerminalModule – terminal output + command history (left panel)
+    CLIAdapter     – maps ttt commands to StorageModule operations
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ttt – Trivial Time Tracker</title>
+  <title>ttt – Interactive Demo | Trivial Time Tracker</title>
   <style>
+    /* ── Design tokens ─────────────────────────────────────────────────── */
     :root {
-      --bg: #1e1e2e;
-      --surface: #181825;
-      --border: #313244;
-      --text: #cdd6f4;
-      --subtext: #a6adc8;
-      --green: #a6e3a1;
-      --yellow: #f9e2af;
-      --red: #f38ba8;
-      --blue: #89b4fa;
-      --mauve: #cba6f7;
-      --teal: #94e2d5;
-      --prompt: #89dceb;
+      --bg:        #1e1e2e;
+      --surface:   #181825;
+      --surface2:  #1e1e2e;
+      --border:    #313244;
+      --text:      #cdd6f4;
+      --subtext:   #a6adc8;
+      --green:     #a6e3a1;
+      --yellow:    #f9e2af;
+      --red:       #f38ba8;
+      --blue:      #89b4fa;
+      --mauve:     #cba6f7;
+      --teal:      #94e2d5;
+      --prompt:    #89dceb;
+      --header-h:  42px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
+    html, body {
+      height: 100%;
       background: var(--bg);
       color: var(--text);
       font-family: "Fira Code", "Cascadia Code", "Consolas", "Courier New", monospace;
-      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Top header bar ────────────────────────────────────────────────── */
+    #app-header {
+      height: var(--header-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
       display: flex;
-      flex-direction: column;
       align-items: center;
-      padding: 2rem 1rem;
+      padding: 0 1rem;
+      gap: 1rem;
+      flex-shrink: 0;
     }
-
-    header {
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-
-    header h1 {
-      font-size: 2rem;
+    #app-header h1 {
+      font-size: 1rem;
       color: var(--mauve);
       letter-spacing: 0.05em;
     }
-
-    header p {
+    #app-header .badges { display: flex; gap: 0.4rem; align-items: center; }
+    #app-header .badges a img { height: 18px; }
+    #app-header .hint {
+      margin-left: auto;
+      font-size: 0.72rem;
       color: var(--subtext);
-      margin-top: 0.5rem;
-      font-size: 0.95rem;
+    }
+    #app-header .hint code {
+      background: var(--bg);
+      padding: 0.1em 0.35em;
+      border-radius: 3px;
+      color: var(--teal);
+    }
+    #app-header a.gh-link {
+      color: var(--blue);
+      font-size: 0.78rem;
+      text-decoration: none;
+    }
+    #app-header a.gh-link:hover { text-decoration: underline; }
+
+    /* ── Three-panel layout ────────────────────────────────────────────── */
+    /*
+      +──────────────────+──────────────────────────+
+      │                  │  Tree panel (top-right)   │
+      │  Terminal panel  ├──────────────────────────┤
+      │  (left)          │  Editor panel (bot-right) │
+      +──────────────────+──────────────────────────+
+    */
+    #layout {
+      display: grid;
+      grid-template-columns: minmax(320px, 50%) 1fr;
+      grid-template-rows: 1fr 1fr;
+      height: calc(100vh - var(--header-h));
     }
 
-    .badges {
+    /* ── Left panel: terminal ───────────────────────────────────────────── */
+    #terminal-panel {
+      grid-row: 1 / 3;
+      grid-column: 1;
       display: flex;
-      gap: 0.5rem;
-      justify-content: center;
-      margin-top: 0.75rem;
-      flex-wrap: wrap;
-    }
-
-    .badges a img { height: 20px; }
-
-    .terminal-wrapper {
-      width: 100%;
-      max-width: 760px;
-      border-radius: 8px;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
       overflow: hidden;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      border: 1px solid var(--border);
     }
 
-    .terminal-bar {
+    .panel-bar {
       background: var(--surface);
-      padding: 0.6rem 1rem;
+      padding: 0.4rem 0.75rem;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.4rem;
       border-bottom: 1px solid var(--border);
-    }
-
-    .terminal-bar .dot {
-      width: 12px; height: 12px;
-      border-radius: 50%;
-    }
-    .dot-red    { background: #ff5f57; }
-    .dot-yellow { background: #febc2e; }
-    .dot-green  { background: #28c840; }
-
-    .terminal-bar span {
-      margin-left: auto;
+      flex-shrink: 0;
       font-size: 0.75rem;
       color: var(--subtext);
     }
+    .panel-bar .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .dot-red    { background: #ff5f57; }
+    .dot-yellow { background: #febc2e; }
+    .dot-green  { background: #28c840; }
+    .panel-bar .title { margin-left: 0.4rem; }
 
-    #terminal {
-      background: var(--bg);
-      padding: 1rem;
-      height: 400px;
+    #terminal-output {
+      flex: 1;
       overflow-y: auto;
-      font-size: 0.875rem;
-      line-height: 1.6;
+      padding: 0.75rem 1rem;
+      font-size: 0.82rem;
+      line-height: 1.65;
     }
 
     .line { white-space: pre-wrap; word-break: break-word; }
-    .line.prompt   { color: var(--prompt); }
-    .line.output   { color: var(--text); }
-    .line.success  { color: var(--green); }
-    .line.warn     { color: var(--yellow); }
-    .line.error    { color: var(--red); }
-    .line.info     { color: var(--blue); }
-    .line.muted    { color: var(--subtext); }
+    .line.prompt  { color: var(--prompt); }
+    .line.output  { color: var(--text); }
+    .line.success { color: var(--green); }
+    .line.warn    { color: var(--yellow); }
+    .line.error   { color: var(--red); }
+    .line.info    { color: var(--blue); }
+    .line.muted   { color: var(--subtext); }
+    .line.ignored { color: var(--yellow); font-style: italic; }
 
-    .input-row {
+    #input-row {
       display: flex;
       align-items: center;
-      padding: 0.6rem 1rem;
+      padding: 0.5rem 1rem;
       background: var(--surface);
       border-top: 1px solid var(--border);
       gap: 0.4rem;
+      flex-shrink: 0;
     }
-
-    .input-row label {
+    #input-row .prompt-label {
       color: var(--prompt);
-      font-size: 0.875rem;
+      font-size: 0.82rem;
       white-space: nowrap;
     }
-
     #cmd-input {
       flex: 1;
       background: transparent;
@@ -132,165 +165,611 @@
       outline: none;
       color: var(--text);
       font-family: inherit;
-      font-size: 0.875rem;
+      font-size: 0.82rem;
       caret-color: var(--mauve);
     }
 
-    .hint {
-      text-align: center;
-      color: var(--subtext);
-      font-size: 0.78rem;
-      margin-top: 0.75rem;
-    }
-
-    section.docs {
-      width: 100%;
-      max-width: 760px;
-      margin-top: 3rem;
-    }
-
-    section.docs h2 {
-      color: var(--mauve);
-      font-size: 1.25rem;
-      margin-bottom: 1rem;
+    /* ── Right-top panel: storage tree ─────────────────────────────────── */
+    #tree-panel {
+      grid-row: 1;
+      grid-column: 2;
+      display: flex;
+      flex-direction: column;
       border-bottom: 1px solid var(--border);
-      padding-bottom: 0.5rem;
+      overflow: hidden;
     }
 
-    section.docs table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.85rem;
+    #tree-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem 0;
+      font-size: 0.8rem;
     }
 
-    section.docs th, section.docs td {
-      text-align: left;
-      padding: 0.5rem 0.75rem;
-      border-bottom: 1px solid var(--border);
+    /* Tree nodes */
+    .tree-node { display: flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0; cursor: pointer; white-space: nowrap; }
+    .tree-node:hover { background: rgba(137,180,250,0.08); }
+    .tree-node .icon { flex-shrink: 0; }
+    .tree-node.folder > .name { color: var(--blue); }
+    .tree-node.file   > .name { color: var(--text); }
+    .tree-node.file:hover > .name { color: var(--teal); text-decoration: underline; }
+    .tree-node.selected > .name { color: var(--mauve); }
+    .tree-children { display: none; }
+    .tree-children.open { display: block; }
+
+    /* ── Right-bottom panel: file content editor ────────────────────────── */
+    #editor-panel {
+      grid-row: 2;
+      grid-column: 2;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
-    section.docs th { color: var(--blue); }
-    section.docs code {
-      background: var(--surface);
-      padding: 0.1em 0.4em;
-      border-radius: 4px;
+    #editor-filename {
+      font-size: 0.72rem;
       color: var(--teal);
+      margin-left: auto;
     }
 
-    footer {
-      margin-top: 3rem;
-      font-size: 0.78rem;
-      color: var(--subtext);
-      text-align: center;
+    #editor-container {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
     }
-    footer a { color: var(--blue); text-decoration: none; }
-    footer a:hover { text-decoration: underline; }
+
+    #editor-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--subtext);
+      font-size: 0.8rem;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
 
-<header>
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<header id="app-header">
   <h1>ttt &mdash; Trivial Time Tracker</h1>
-  <p>A single-binary, file-based CLI time tracker for developers.</p>
   <div class="badges">
-    <a href="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/ci.yml">
+    <a href="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/ci.yml" target="_blank" rel="noopener">
       <img src="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/ci.yml/badge.svg" alt="CI" />
     </a>
-    <a href="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/codeql.yml">
+    <a href="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/codeql.yml" target="_blank" rel="noopener">
       <img src="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/codeql.yml/badge.svg" alt="CodeQL" />
     </a>
-    <a href="https://github.com/Tiliavir/trivial-time-tracker">
-      <img src="https://img.shields.io/badge/license-MIT-blue" alt="License MIT" />
-    </a>
   </div>
+  <a class="gh-link" href="https://github.com/Tiliavir/trivial-time-tracker" target="_blank" rel="noopener">GitHub ↗</a>
+  <span class="hint">Try: <code>ttt start ECM --task "REST refactor"</code> &nbsp;·&nbsp; <code>ttt status</code> &nbsp;·&nbsp; <code>ttt help</code></span>
 </header>
 
-<div class="terminal-wrapper">
-  <div class="terminal-bar">
-    <div class="dot dot-red"></div>
-    <div class="dot dot-yellow"></div>
-    <div class="dot dot-green"></div>
-    <span>ttt demo &mdash; interactive</span>
+<!-- ── Three-panel layout ─────────────────────────────────────────────────── -->
+<div id="layout">
+
+  <!-- Left: terminal -->
+  <div id="terminal-panel">
+    <div class="panel-bar">
+      <div class="dot dot-red"></div>
+      <div class="dot dot-yellow"></div>
+      <div class="dot dot-green"></div>
+      <span class="title">ttt demo &mdash; interactive terminal</span>
+    </div>
+    <div id="terminal-output" role="log" aria-live="polite"></div>
+    <div id="input-row">
+      <span class="prompt-label">&gt;&nbsp;</span>
+      <input id="cmd-input" type="text" autocomplete="off" autocorrect="off"
+             spellcheck="false" placeholder="ttt &lt;command&gt; …" aria-label="command input" />
+    </div>
   </div>
-  <div id="terminal" role="log" aria-live="polite"></div>
-  <div class="input-row">
-    <label for="cmd-input">$ ttt&nbsp;</label>
-    <input id="cmd-input" type="text" autocomplete="off" autocorrect="off"
-           spellcheck="false" placeholder="type a command…" aria-label="command input" />
+
+  <!-- Right-top: storage tree -->
+  <div id="tree-panel">
+    <div class="panel-bar">
+      <span class="title">Storage &nbsp;~/.<strong>ttt</strong>/</span>
+    </div>
+    <div id="tree-content" aria-label="virtual filesystem tree"></div>
   </div>
+
+  <!-- Right-bottom: file content editor -->
+  <div id="editor-panel">
+    <div class="panel-bar">
+      <span class="title">File Viewer</span>
+      <span id="editor-filename"></span>
+    </div>
+    <div id="editor-container">
+      <div id="editor-placeholder">Click a file in the tree to view its contents</div>
+    </div>
+  </div>
+
 </div>
-<p class="hint">Try: <code>start ECM --task "REST refactor"</code>, <code>status</code>, <code>stop</code>, <code>list</code>, <code>report</code>, <code>outlook sync</code>, <code>help</code></p>
 
-<section class="docs">
-  <h2>Commands</h2>
-  <table>
-    <thead>
-      <tr><th>Command</th><th>Description</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>ttt start &lt;project&gt; [--task T] [--comment C] [--tags a,b]</code></td><td>Start a new time entry</td></tr>
-      <tr><td><code>ttt stop [--comment C]</code></td><td>Stop the active timer</td></tr>
-      <tr><td><code>ttt status</code></td><td>Show running timer or today's total</td></tr>
-      <tr><td><code>ttt list [--today|--week]</code></td><td>List time entries</td></tr>
-      <tr><td><code>ttt report [--week] [--format md|csv|json]</code></td><td>Aggregated weekly report</td></tr>
-      <tr><td><code>ttt export [--format csv|json|md]</code></td><td>Export entries to stdout</td></tr>
-      <tr><td><code>ttt outlook sync [--date D] [--from D] [--to D] [--dry-run]</code></td><td>Sync Outlook calendar events (simulated in demo)</td></tr>
-    </tbody>
-  </table>
-
-  <h2 style="margin-top:2rem">Installation</h2>
-  <table>
-    <thead><tr><th>Method</th><th>Command</th></tr></thead>
-    <tbody>
-      <tr><td>Go install</td><td><code>go install github.com/Tiliavir/trivial-time-tracker@latest</code></td></tr>
-      <tr><td>Build from source</td><td><code>git clone … &amp;&amp; go build -o ttt .</code></td></tr>
-      <tr><td>Download binary</td><td>See <a href="https://github.com/Tiliavir/trivial-time-tracker/releases">Releases</a></td></tr>
-    </tbody>
-  </table>
-</section>
-
-<footer>
-  <p>
-    <a href="https://github.com/Tiliavir/trivial-time-tracker">GitHub</a> &middot;
-    <a href="https://github.com/Tiliavir/trivial-time-tracker/releases">Releases</a> &middot;
-    MIT License
-  </p>
-</footer>
+<!-- ── Monaco Editor (loaded from CDN) ───────────────────────────────────── -->
+<!--
+  NOTE: The Monaco CDN script is loaded without Subresource Integrity (SRI)
+  because Monaco dynamically loads many sub-modules from the same CDN origin,
+  making full SRI coverage impractical. The CDN URL is pinned to a specific
+  version (0.45.0) to reduce supply-chain risk. For a production deployment,
+  consider self-hosting Monaco assets.
+-->
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
 
 <script>
-(function () {
-  "use strict";
+"use strict";
+// ═══════════════════════════════════════════════════════════════════════════
+// StorageModule – virtual ~/.ttt/ filesystem + localStorage persistence
+//
+// NOTE: Browser simulation only. Not the real ttt CLI implementation.
+// The real ttt stores files in ~/.ttt/{YYYY}/{MM}/{DD}.json on disk.
+// Here we mirror that structure in an in-memory object tree and persist
+// it to localStorage so state survives page reloads.
+// ═══════════════════════════════════════════════════════════════════════════
+const StorageModule = (() => {
+  const LS_KEY = "ttt_demo_v2";
 
-  // ── In-memory state ───────────────────────────────────────────────────────
-  let active = null;   // { project, task, comment, tags, start }
-  let entries = [];    // { project, task, comment, tags, start, end, duration }
-  let history = [];
-  let histIdx  = -1;
+  // Virtual filesystem root node (mirrors ~/.ttt/)
+  let vfs = { type: "folder", name: ".ttt", children: [], expanded: true };
 
-  const terminal = document.getElementById("terminal");
-  const input    = document.getElementById("cmd-input");
+  // DayFile cache: "YYYY-MM-DD" → { date, entries: [] }
+  let days = {};
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  function now() { return new Date(); }
-
-  function fmt(d) {
-    return d.toTimeString().slice(0, 8);
-  }
+  // ── Date helpers ──────────────────────────────────────────────────────
+  const pad2 = n => String(n).padStart(2, "0");
 
   function fmtDate(d) {
-    return d.toISOString().slice(0, 10);
+    return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
   }
 
-  function elapsed(start, end) {
-    const secs = Math.round((end - start) / 1000);
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
+  // Path parts for a daily file: ["2026","02","27.json"]
+  function dayPath(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    return [String(d.getFullYear()), pad2(d.getMonth()+1), pad2(d.getDate()) + ".json"];
   }
 
+  // ── VFS helpers ───────────────────────────────────────────────────────
+  // Ensure folder path exists, return the deepest folder node.
+  function mkdirp(parts) {
+    let node = vfs;
+    for (const part of parts) {
+      let child = node.children.find(c => c.type === "folder" && c.name === part);
+      if (!child) {
+        child = { type: "folder", name: part, children: [], expanded: true };
+        node.children.push(child);
+        node.children.sort((a, b) => a.name.localeCompare(b.name));
+      }
+      node = child;
+    }
+    return node;
+  }
+
+  // Write (create or overwrite) a file at pathParts = [...folderParts, filename].
+  function putFile(pathParts, content, format) {
+    const name   = pathParts[pathParts.length - 1];
+    const dir    = mkdirp(pathParts.slice(0, -1));
+    let   file   = dir.children.find(c => c.type === "file" && c.name === name);
+    if (!file) {
+      file = { type: "file", name, content: "", format: format || "json" };
+      dir.children.push(file);
+      dir.children.sort((a, b) => {
+        // folders first, then files, both alphabetical
+        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+    file.content = content;
+    if (format) file.format = format;
+  }
+
+  // Find a file node given its path parts; returns null if not found.
+  function getFile(pathParts) {
+    const name   = pathParts[pathParts.length - 1];
+    const dirs   = pathParts.slice(0, -1);
+    let   node   = vfs;
+    for (const part of dirs) {
+      node = node.children && node.children.find(c => c.type === "folder" && c.name === part);
+      if (!node) return null;
+    }
+    return (node && node.children && node.children.find(c => c.type === "file" && c.name === name)) || null;
+  }
+
+  // ── ID generation (mirrors timecalc.GenerateID, uses crypto.getRandomValues
+  //    just as the real CLI uses crypto/rand) ──────────────────────────────
+  function generateID(now) {
+    const chars   = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const buf     = new Uint32Array(5);
+    crypto.getRandomValues(buf);
+    const suffix  = Array.from(buf, v => chars[v % chars.length]).join("");
+    return `${now.getFullYear()}${pad2(now.getMonth()+1)}${pad2(now.getDate())}-` +
+           `${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}-${suffix}`;
+  }
+
+  // ── Day-file operations ───────────────────────────────────────────────
+  function loadDay(date) {
+    const key = fmtDate(date instanceof Date ? date : new Date(date));
+    if (!days[key]) days[key] = { date: key, entries: [] };
+    return days[key];
+  }
+
+  function saveDay(date, df) {
+    const key = fmtDate(date instanceof Date ? date : new Date(date));
+    days[key] = df;
+    putFile(dayPath(date), JSON.stringify(df, null, 2), "json");
+    persist();
+  }
+
+  // Replace or append an entry in the day-file for `date`.
+  function updateEntry(date, entry) {
+    const df  = loadDay(date);
+    const idx = df.entries.findIndex(e => e.id === entry.id);
+    if (idx >= 0) df.entries[idx] = entry;
+    else          df.entries.push(entry);
+    saveDay(date, df);
+  }
+
+  // Scan last 7 days for an entry with no end (active timer).
+  function findActive() {
+    const now = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d  = new Date(now);
+      d.setDate(d.getDate() - i);
+      const df = loadDay(d);
+      for (let j = df.entries.length - 1; j >= 0; j--) {
+        if (!df.entries[j].end) return { entry: df.entries[j], date: d };
+      }
+    }
+    return null;
+  }
+
+  // Load all entries in [from, to] inclusive.
+  function loadRange(from, to) {
+    const result = [];
+    const d      = new Date(from); d.setHours(0, 0, 0, 0);
+    const end    = new Date(to);   end.setHours(23, 59, 59, 999);
+    while (d <= end) {
+      const df = loadDay(d);
+      result.push(...df.entries);
+      d.setDate(d.getDate() + 1);
+    }
+    return result;
+  }
+
+  // ── Week / ISO helpers (mirror timecalc.go) ───────────────────────────
+  function weekRange(now) {
+    const wd         = now.getDay(); // 0=Sun
+    const daysFromMon = wd === 0 ? 6 : wd - 1;
+    const mon = new Date(now);
+    mon.setDate(mon.getDate() - daysFromMon);
+    mon.setHours(0, 0, 0, 0);
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    sun.setHours(23, 59, 59, 999);
+    return { from: mon, to: sun };
+  }
+
+  function isoWeekLabel(now) {
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const y = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const w = Math.ceil((((d - y) / 86400000) + 1) / 7);
+    return `${now.getFullYear()}-W${String(w).padStart(2, "0")}`;
+  }
+
+  // ── localStorage persistence ──────────────────────────────────────────
+  function persist() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ vfs, days })); } catch (_) {}
+  }
+
+  function restore() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      if (state.vfs)  vfs  = state.vfs;
+      if (state.days) {
+        days = state.days;
+        // Re-inflate Date objects that JSON.parse turned into strings
+        for (const df of Object.values(days)) {
+          for (const e of df.entries) {
+            e.start = new Date(e.start);
+            if (e.end) e.end = new Date(e.end);
+          }
+        }
+      }
+    } catch (_) { /* silently ignore corrupt state */ }
+  }
+
+  // ── Default config (mirrors internal/config/config.go defaults) ───────
+  function ensureConfig() {
+    if (!getFile(["config.json"])) {
+      const cfg = {
+        outlook: {
+          tenant_id:       "common",
+          client_id:       "04b07795-8542-4c4a-95af-30b2c573d5ab",
+          default_project: "Meetings",
+          timezone:        ""
+        }
+      };
+      putFile(["config.json"], JSON.stringify(cfg, null, 2), "json");
+      persist();
+    }
+  }
+
+  function init() {
+    restore();
+    ensureConfig();
+  }
+
+  function reset() {
+    vfs  = { type: "folder", name: ".ttt", children: [], expanded: true };
+    days = {};
+    try { localStorage.removeItem(LS_KEY); } catch (_) {}
+    ensureConfig();
+  }
+
+  return {
+    init, reset, persist,
+    getVFS:       ()  => vfs,
+    getFile, putFile,
+    generateID, fmtDate, dayPath,
+    loadDay, saveDay, updateEntry, loadRange, findActive,
+    weekRange, isoWeekLabel,
+  };
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TreeModule – renders the virtual filesystem as a collapsible tree
+// ═══════════════════════════════════════════════════════════════════════════
+const TreeModule = (() => {
+  let container     = null;
+  let onFileClick   = null;
+  let selectedPath  = null;
+
+  function init(containerEl, fileClickHandler) {
+    container   = containerEl;
+    onFileClick = fileClickHandler;
+  }
+
+  // Build a flat path string for a node (for selection tracking)
+  function nodePath(node, parentPath) {
+    return parentPath ? parentPath + "/" + node.name : node.name;
+  }
+
+  function renderNode(node, parentPath, depth) {
+    const path = nodePath(node, parentPath);
+    const wrapper = document.createElement("div");
+
+    if (node.type === "folder") {
+      // Folder row
+      const row = document.createElement("div");
+      row.className = "tree-node folder";
+      row.style.paddingLeft = (depth * 14 + 6) + "px";
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-expanded", node.expanded ? "true" : "false");
+      const icon = document.createElement("span");
+      icon.className = "icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = node.expanded ? "▾" : "▸";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = node.name + "/";
+      row.appendChild(icon);
+      row.appendChild(name);
+      wrapper.appendChild(row);
+
+      // Children container
+      const childWrap = document.createElement("div");
+      childWrap.className = "tree-children" + (node.expanded ? " open" : "");
+      if (node.children) {
+        for (const child of node.children) {
+          childWrap.appendChild(renderNode(child, path, depth + 1));
+        }
+      }
+      wrapper.appendChild(childWrap);
+
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        node.expanded = !node.expanded;
+        row.setAttribute("aria-expanded", node.expanded ? "true" : "false");
+        icon.textContent   = node.expanded ? "▾" : "▸";
+        childWrap.className = "tree-children" + (node.expanded ? " open" : "");
+      });
+
+    } else {
+      // File row
+      const row = document.createElement("div");
+      row.className = "tree-node file" + (selectedPath === path ? " selected" : "");
+      row.style.paddingLeft = (depth * 14 + 6) + "px";
+      const icon = document.createElement("span");
+      icon.className = "icon";
+      icon.setAttribute("aria-label", "file");
+      icon.textContent = "📄";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = node.name;
+      row.appendChild(icon);
+      row.appendChild(name);
+      wrapper.appendChild(row);
+
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectedPath = path;
+        if (onFileClick) onFileClick(node, path);
+        render(); // re-render to update selection highlight
+      });
+    }
+
+    return wrapper;
+  }
+
+  function render() {
+    if (!container) return;
+    container.innerHTML = "";
+    const root = StorageModule.getVFS();
+    if (root.children && root.children.length > 0) {
+      for (const child of root.children) {
+        container.appendChild(renderNode(child, "", 0));
+      }
+    } else {
+      const empty = document.createElement("div");
+      empty.style.cssText = "padding:0.5rem 1rem;color:var(--subtext);font-size:0.78rem;";
+      empty.textContent = "(empty – run ttt start to create entries)";
+      container.appendChild(empty);
+    }
+  }
+
+  return { init, render };
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EditorModule – Monaco Editor wrapper for file content viewing
+// ═══════════════════════════════════════════════════════════════════════════
+const EditorModule = (() => {
+  let editor         = null;
+  let ready          = false;
+  let pendingLoad    = null;
+  let filenameLabel  = null;
+
+  function init(containerId, filenameLabelEl) {
+    filenameLabel = filenameLabelEl;
+
+    if (typeof require === "undefined") {
+      // Monaco CDN script failed to load – show a plain textarea fallback
+      const ta = document.createElement("textarea");
+      ta.id = "editor-fallback";
+      ta.readOnly = true;
+      ta.setAttribute("aria-label", "file content viewer");
+      ta.style.cssText =
+        "width:100%;height:100%;background:var(--surface);color:var(--text);" +
+        "border:none;outline:none;padding:0.75rem;font-family:inherit;font-size:0.8rem;resize:none;";
+      document.getElementById(containerId).appendChild(ta);
+      editor = { isFallback: true, el: ta };
+      ready  = true;
+      return;
+    }
+
+    require.config({
+      paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs" }
+    });
+    require(["vs/editor/editor.main"], () => {
+      editor = monaco.editor.create(document.getElementById(containerId), {
+        value:               "",
+        language:            "json",
+        theme:               "vs-dark",
+        readOnly:            true,
+        minimap:             { enabled: false },
+        scrollBeyondLastLine: false,
+        fontSize:            12,
+        fontFamily:          '"Fira Code","Cascadia Code","Consolas","Courier New",monospace',
+        wordWrap:            "on",
+      });
+      ready = true;
+      if (pendingLoad) {
+        _set(pendingLoad.content, pendingLoad.lang, pendingLoad.name);
+        pendingLoad = null;
+      }
+    });
+  }
+
+  function _set(content, lang, name) {
+    if (editor.isFallback) {
+      editor.el.value = content;
+    } else {
+      const model = editor.getModel();
+      monaco.editor.setModelLanguage(model, lang);
+      editor.setValue(content);
+    }
+    if (filenameLabel) filenameLabel.textContent = name || "";
+    // Hide placeholder
+    const ph = document.getElementById("editor-placeholder");
+    if (ph) ph.style.display = "none";
+  }
+
+  function loadFile(fileNode, fullPath) {
+    const ext  = fileNode.name.split(".").pop().toLowerCase();
+    const lang = ext === "json" ? "json" : (ext === "yaml" || ext === "yml") ? "yaml" : "plaintext";
+    if (!ready) {
+      pendingLoad = { content: fileNode.content, lang, name: fullPath };
+      return;
+    }
+    _set(fileNode.content, lang, fullPath);
+  }
+
+  // Expose resize so the panel can call it after layout changes
+  function layout() {
+    if (editor && !editor.isFallback) editor.layout();
+  }
+
+  return { init, loadFile, layout };
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TerminalModule – output printer + command history
+// ═══════════════════════════════════════════════════════════════════════════
+const TerminalModule = (() => {
+  let outputEl = null;
+  let inputEl  = null;
+  let history  = [];
+  let histIdx  = -1;
+  let handler  = null;
+
+  function init(outputElId, inputElId, commandHandler) {
+    outputEl = document.getElementById(outputElId);
+    inputEl  = document.getElementById(inputElId);
+    handler  = commandHandler;
+
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const val = inputEl.value;
+        inputEl.value = "";
+        histIdx = -1;
+        if (val.trim()) history.unshift(val.trim());
+        if (handler) handler(val);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (histIdx < history.length - 1) {
+          histIdx++;
+          inputEl.value = history[histIdx];
+        }
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (histIdx > 0) {
+          histIdx--;
+          inputEl.value = history[histIdx];
+        } else {
+          histIdx = -1;
+          inputEl.value = "";
+        }
+      }
+    });
+  }
+
+  function print(text, cls) {
+    const div = document.createElement("div");
+    div.className = "line " + (cls || "output");
+    div.textContent = text;
+    outputEl.appendChild(div);
+    outputEl.scrollTop = outputEl.scrollHeight;
+  }
+
+  function clear() { outputEl.innerHTML = ""; }
+
+  return { init, print, clear };
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CLIAdapter – maps ttt CLI commands to StorageModule operations
+//
+// Command logic mirrors the real Go implementation. Where exact behavior
+// cannot be reproduced in the browser (e.g. Microsoft Graph API for
+// "outlook sync"), it is clearly marked as simulated.
+// ═══════════════════════════════════════════════════════════════════════════
+const CLIAdapter = (() => {
+  const p = TerminalModule.print.bind(TerminalModule);
+
+  // ── Formatting helpers (mirror timecalc.go) ───────────────────────────
   function formatDur(secs) {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
@@ -299,14 +778,33 @@
     return `${secs}s`;
   }
 
-  function parseFlagsAndArgs(tokens) {
-    const flags = {};
+  function formatHHMMSS(secs) {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  }
+
+  function formatElapsed(secs) {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  // ── Flag/arg parser (mirrors cobra flag semantics) ────────────────────
+  function parseArgs(tokens) {
+    const flags      = {};
     const positional = [];
     for (let i = 0; i < tokens.length; i++) {
       if (tokens[i].startsWith("--")) {
         const key = tokens[i].slice(2);
-        if (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")) {
-          flags[key] = tokens[++i];
+        const next = tokens[i + 1];
+        if (next !== undefined && !next.startsWith("--")) {
+          flags[key] = next;
+          i++;
         } else {
           flags[key] = true;
         }
@@ -317,292 +815,354 @@
     return { flags, positional };
   }
 
-  // ── Terminal output ───────────────────────────────────────────────────────
-  function print(text, cls) {
-    const div = document.createElement("div");
-    div.className = "line " + (cls || "output");
-    div.textContent = text;
-    terminal.appendChild(div);
-    terminal.scrollTop = terminal.scrollHeight;
+  // ── CSV escape (mirrors export.go csvEscape) ──────────────────────────
+  function csvEscape(s) {
+    if (!/[,"\n\r]/.test(s)) return s;
+    return '"' + s.replace(/"/g, '""') + '"';
   }
 
-  function printPrompt(cmd) {
-    print("$ ttt " + cmd, "prompt");
+  // ── print helpers ─────────────────────────────────────────────────────
+  function printList(entries) {
+    if (!entries.length) { p("No entries found.", "muted"); return; }
+    let lastDay = "";
+    for (const e of entries) {
+      const day = StorageModule.fmtDate(e.start);
+      if (day !== lastDay) { p(day, "info"); lastDay = day; }
+      const s   = e.start.toTimeString().slice(0, 5);
+      const end = e.end ? e.end.toTimeString().slice(0, 5) : "ongoing";
+      const dur = e.duration_seconds != null ? ` (${formatDur(e.duration_seconds)})` : "";
+      const tsk = e.task ? "  " + e.task : "";
+      p(`${s}–${end}  ${e.project}${tsk}${dur}`, "output");
+    }
   }
 
-  // ── Commands ──────────────────────────────────────────────────────────────
-  const commands = {
+  // ── Commands ──────────────────────────────────────────────────────────
 
-    start(tokens) {
-      const { flags, positional } = parseFlagsAndArgs(tokens);
-      if (!positional.length) {
-        print('Error: requires exactly 1 arg(s), only received 0', "error");
-        print('Usage: ttt start <project>', "muted");
-        return;
+  function cmdStart(tokens) {
+    const { flags, positional } = parseArgs(tokens);
+    if (!positional.length) {
+      p("Error: requires exactly 1 arg(s), only received 0", "error");
+      p("Usage:  ttt start <project>", "muted");
+      return;
+    }
+    const project = positional[0];
+    const now     = new Date();
+
+    // Auto-stop any active timer (mirrors start.go behaviour)
+    const active = StorageModule.findActive();
+    if (active) {
+      const { entry, date } = active;
+      p(`Warning: auto-stopping active timer for project "${entry.project}"`, "warn");
+      const end  = now;
+      const dur  = Math.round((end - entry.start) / 1000);
+      const endT = new Date(end);
+      entry.end              = endT;
+      entry.duration_seconds = dur;
+      StorageModule.updateEntry(date, entry);
+    }
+
+    const entry = {
+      id:               StorageModule.generateID(now),
+      project,
+      task:             flags.task    || null,
+      comment:          flags.comment || null,
+      tags:             flags.tags    ? flags.tags.split(",").map(t => t.trim()) : [],
+      start:            now,
+      end:              null,
+      duration_seconds: null,
+      source:           "manual",
+    };
+    StorageModule.updateEntry(now, entry);
+    p(`Started timer for project "${project}" at ${now.toTimeString().slice(0, 8)}`, "success");
+  }
+
+  function cmdStop(tokens) {
+    const { flags } = parseArgs(tokens);
+    const now    = new Date();
+    const active = StorageModule.findActive();
+
+    if (!active) {
+      p("No active timer to stop.", "error");
+      return;
+    }
+
+    const { entry, date } = active;
+
+    // Merge comment (mirrors stop.go / stopEntry)
+    if (flags.comment) {
+      entry.comment = entry.comment
+        ? entry.comment + "\n" + flags.comment
+        : flags.comment;
+    }
+
+    const dur = Math.round((now - entry.start) / 1000);
+    entry.end              = now;
+    entry.duration_seconds = dur;
+    StorageModule.updateEntry(date, entry);
+    p(`Stopped timer for project "${entry.project}". Elapsed: ${formatElapsed(dur)}`, "success");
+  }
+
+  function cmdStatus() {
+    const now    = new Date();
+    const active = StorageModule.findActive();
+
+    if (active) {
+      const { entry } = active;
+      const secs = Math.round((now - entry.start) / 1000);
+      p("Running:", "info");
+      p(`  Project: ${entry.project}`, "output");
+      if (entry.task) p(`  Task: ${entry.task}`, "output");
+      p(`  Since: ${entry.start.toTimeString().slice(0, 5)}`, "output");
+      p(`  Elapsed: ${formatHHMMSS(secs)}`, "output");
+    } else {
+      // Idle: show today's total (mirrors status.go)
+      const df    = StorageModule.loadDay(now);
+      let   total = 0;
+      for (const e of df.entries) {
+        if (e.duration_seconds != null) total += e.duration_seconds;
       }
-      const project = positional[0];
-      const n = now();
+      p("No active timer.", "muted");
+      p(`Today: ${formatDur(total)} logged.`, "output");
+    }
+  }
 
-      if (active) {
-        const dur = Math.round((n - active.start) / 1000);
-        entries.push({ ...active, end: n, duration: dur });
-        print(`Warning: auto-stopping active timer for project "${active.project}"`, "warn");
-        active = null;
-      }
+  function cmdList(tokens) {
+    const { flags } = parseArgs(tokens);
+    const now = new Date();
+    let from, to;
 
-      active = {
-        project,
-        task: flags.task || null,
-        comment: flags.comment || null,
-        tags: flags.tags ? flags.tags.split(",").map(t => t.trim()) : [],
-        start: n,
-      };
+    if (flags.week) {
+      const wr = StorageModule.weekRange(now);
+      from = wr.from; to = wr.to;
+    } else {
+      // Default (and --today): today only
+      from = new Date(now); from.setHours(0, 0, 0, 0);
+      to   = new Date(now); to.setHours(23, 59, 59, 999);
+    }
 
-      print(`Started timer for project "${project}" at ${fmt(n)}`, "success");
-    },
+    const entries = StorageModule.loadRange(from, to);
 
-    stop(tokens) {
-      const { flags } = parseFlagsAndArgs(tokens);
-      const n = now();
+    // Include ongoing active entry in output
+    const active = StorageModule.findActive();
+    if (active) entries.push(active.entry);
 
-      if (!active) {
-        print("No active timer to stop.", "error");
-        return;
-      }
+    printList(entries);
+  }
 
-      const comment = flags.comment || null;
-      if (comment && active.comment) {
-        active.comment = active.comment + "\n" + comment;
-      } else if (comment) {
-        active.comment = comment;
-      }
+  function cmdReport(tokens) {
+    const { flags } = parseArgs(tokens);
+    const now    = new Date();
+    const format = flags.format || "md";
+    const wr     = StorageModule.weekRange(now);
+    const label  = StorageModule.isoWeekLabel(now);
 
-      const dur = Math.round((n - active.start) / 1000);
-      entries.push({ ...active, end: n, duration: dur });
-      print(`Stopped timer for project "${active.project}". Elapsed: ${elapsed(active.start, n)}`, "success");
-      active = null;
-    },
+    const entries = StorageModule.loadRange(wr.from, wr.to);
 
-    status() {
-      const n = now();
-      if (active) {
-        const secs = Math.round((n - active.start) / 1000);
-        const h = String(Math.floor(secs / 3600)).padStart(2, "0");
-        const m = String(Math.floor((secs % 3600) / 60)).padStart(2, "0");
-        const s = String(secs % 60).padStart(2, "0");
-        print("Running:", "info");
-        print(`  Project: ${active.project}`, "output");
-        if (active.task) print(`  Task: ${active.task}`, "output");
-        print(`  Since: ${active.start.toTimeString().slice(0, 5)}`, "output");
-        print(`  Elapsed: ${h}:${m}:${s}`, "output");
-      } else {
-        const today = fmtDate(n);
-        const todayEntries = entries.filter(e => fmtDate(e.start) === today);
-        const total = todayEntries.reduce((a, e) => a + e.duration, 0);
-        print("No active timer.", "muted");
-        print(`Today: ${formatDur(total)} logged.`, "output");
-      }
-    },
+    // Aggregate by project (mirrors report.go)
+    const totals = {};
+    for (const e of entries) {
+      if (e.duration_seconds == null) continue;
+      totals[e.project] = (totals[e.project] || 0) + e.duration_seconds;
+    }
+    const order = Object.keys(totals).sort();
+    const grand = order.reduce((a, k) => a + totals[k], 0);
 
-    list(tokens) {
-      const { flags } = parseFlagsAndArgs(tokens);
-      const n = now();
-      let filtered;
+    if (format === "csv") {
+      p("project,duration_minutes", "output");
+      for (const k of order) p(`${k},${Math.floor(totals[k] / 60)}`, "output");
+    } else if (format === "json") {
+      p("{", "output");
+      p(`  "week": "${label}",`, "output");
+      p(`  "projects": [`, "output");
+      order.forEach((k, i) => {
+        const comma = i < order.length - 1 ? "," : "";
+        p(`    {"project": "${k}", "duration_minutes": ${Math.floor(totals[k] / 60)}}${comma}`, "output");
+      });
+      p(`  ],`, "output");
+      p(`  "total_minutes": ${Math.floor(grand / 60)}`, "output");
+      p("}", "output");
+    } else {
+      // md (default)
+      p(`Week ${label}`, "info");
+      p("--------------------------------", "muted");
+      for (const k of order) p(k.padEnd(20) + formatDur(totals[k]), "output");
+      p("--------------------------------", "muted");
+      p("Total".padEnd(20) + formatDur(grand), "success");
+    }
+  }
 
-      if (flags.week) {
-        const day = n.getDay();
-        const daysFromMon = (day === 0 ? 6 : day - 1);
-        const mon = new Date(n);
-        mon.setDate(n.getDate() - daysFromMon);
-        mon.setHours(0, 0, 0, 0);
-        filtered = entries.filter(e => e.start >= mon);
-      } else {
-        const startOfDay = new Date(n);
-        startOfDay.setHours(0, 0, 0, 0);
-        filtered = entries.filter(e => e.start >= startOfDay);
-      }
+  function cmdExport(tokens) {
+    const { flags } = parseArgs(tokens);
+    const now    = new Date();
+    const format = flags.format || "csv";
+    const wr     = StorageModule.weekRange(now);
 
-      if (active) filtered = [...filtered, { ...active, end: null }];
+    const entries = StorageModule.loadRange(wr.from, wr.to);
 
-      if (!filtered.length) {
-        print("No entries found.", "muted");
-        return;
-      }
-
-      let lastDay = "";
-      for (const e of filtered) {
-        const day = fmtDate(e.start);
-        if (day !== lastDay) {
-          print(day, "info");
-          lastDay = day;
-        }
-        const startStr = e.start.toTimeString().slice(0, 5);
-        const endStr   = e.end ? e.end.toTimeString().slice(0, 5) : "ongoing";
-        const durStr   = e.duration != null ? ` (${formatDur(e.duration)})` : "";
-        const taskStr  = e.task ? "  " + e.task : "";
-        print(`${startStr}–${endStr}  ${e.project}${taskStr}${durStr}`, "output");
-      }
-    },
-
-    report(tokens) {
-      const { flags } = parseFlagsAndArgs(tokens);
-      const n = now();
-      const format = flags.format || "md";
-
-      const day = n.getDay();
-      const daysFromMon = (day === 0 ? 6 : day - 1);
-      const mon = new Date(n); mon.setDate(n.getDate() - daysFromMon); mon.setHours(0,0,0,0);
-      const sun = new Date(mon); sun.setDate(mon.getDate() + 6); sun.setHours(23,59,59,999);
-
-      const year = n.getFullYear();
-      const week = (() => {
-        const d = new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()));
-        d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-        const y = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-        return Math.ceil((((d - y) / 86400000) + 1) / 7);
-      })();
-      const label = `${year}-W${String(week).padStart(2, "0")}`;
-
-      const totals = {};
+    if (format === "json") {
+      // Serialise with RFC3339 timestamps (mirrors export.go json branch)
+      p(JSON.stringify(entries.map(e => ({
+        ...e,
+        start: e.start.toISOString(),
+        end:   e.end ? e.end.toISOString() : null,
+      })), null, 2), "output");
+    } else if (format === "md") {
+      printList(entries);
+    } else {
+      // csv (default, mirrors export.go printCSV)
+      p("date,project,task,comment,start,end,duration_minutes", "output");
       for (const e of entries) {
-        if (e.start >= mon && e.start <= sun) {
-          totals[e.project] = (totals[e.project] || 0) + e.duration;
-        }
+        const date   = StorageModule.fmtDate(e.start);
+        const task   = e.task    || "";
+        const cmt    = e.comment || "";
+        const s      = e.start.toISOString();
+        const end    = e.end ? e.end.toISOString() : "";
+        const durMin = e.duration_seconds != null ? Math.floor(e.duration_seconds / 60) : 0;
+        p([date, e.project, task, cmt, s, end, durMin].map(csvEscape).join(","), "output");
       }
-      const order = Object.keys(totals).sort();
-      const grand = order.reduce((a, p) => a + totals[p], 0);
+    }
+  }
 
-      if (format === "csv") {
-        print("project,duration_minutes", "output");
-        for (const p of order) print(`${p},${Math.floor(totals[p] / 60)}`, "output");
-      } else if (format === "json") {
-        print("{", "output");
-        print(`  "week": "${label}",`, "output");
-        print(`  "projects": [`, "output");
-        order.forEach((p, i) => {
-          const comma = i < order.length - 1 ? "," : "";
-          print(`    {"project": "${p}", "duration_minutes": ${Math.floor(totals[p] / 60)}}${comma}`, "output");
-        });
-        print(`  ],`, "output");
-        print(`  "total_minutes": ${Math.floor(grand / 60)}`, "output");
-        print("}", "output");
-      } else {
-        print(`Week ${label}`, "info");
-        print("--------------------------------", "muted");
-        for (const p of order) {
-          print(p.padEnd(20) + formatDur(totals[p]), "output");
-        }
-        print("--------------------------------", "muted");
-        print("Total".padEnd(20) + formatDur(grand), "success");
-      }
-    },
+  function cmdOutlook(tokens) {
+    const sub = tokens[0];
+    if (sub !== "sync") {
+      p(`Error: unknown outlook subcommand "${sub || ""}". Try: ttt outlook sync`, "error");
+      return;
+    }
+    const { flags } = parseArgs(tokens.slice(1));
+    const now       = new Date();
+    const dateStr   = flags.date || StorageModule.fmtDate(now);
+    const fromStr   = flags.from || dateStr;
+    const toStr     = flags.to   || dateStr;
+    const dryRun    = !!flags["dry-run"];
 
-    export(tokens) {
-      const { flags } = parseFlagsAndArgs(tokens);
-      this.list(flags.week ? ["--week"] : []);
-    },
+    p(`Syncing Outlook events (${fromStr} → ${toStr})${dryRun ? " [dry-run]" : ""}...`, "info");
+    p("", "output");
+    // DEMO NOTE: No real Microsoft Graph API call is made here.
+    // The real ttt uses device-code OAuth2 flow to fetch calendar events.
+    p("  (Browser simulation – no real Microsoft Graph API call is made.)", "muted");
+    p("", "output");
+    p("  \u2713 Imported: Architecture Board (1h 30m)", "success");
+    p("  \u2713 Imported: 1:1 with CTO (30m)", "success");
+    p("  \u2013 Skipped:  Weekly Sync (already exists)", "muted");
+    p("", "output");
+    p("Summary:", "info");
+    p("  2 imported", "output");
+    p("  1 skipped", "output");
+    p("  0 updated", "output");
+  }
 
-    outlook(tokens) {
-      const sub = tokens[0];
-      if (sub !== "sync") {
-        print(`Error: unknown outlook subcommand "${sub || ""}". Try: outlook sync`, "error");
-        return;
-      }
-      const { flags } = parseFlagsAndArgs(tokens.slice(1));
-      const n = now();
-      const dateStr = flags.date || fmtDate(n);
-      const fromStr = flags.from || dateStr;
-      const toStr   = flags.to   || dateStr;
-      const dryRun  = !!flags["dry-run"];
+  function cmdHelp() {
+    p("Available commands:", "info");
+    p("  ttt start <project> [--task T] [--comment C] [--tags a,b]", "output");
+    p("  ttt stop [--comment C]", "output");
+    p("  ttt status", "output");
+    p("  ttt list [--today|--week]", "output");
+    p("  ttt report [--week] [--format md|csv|json]", "output");
+    p("  ttt export [--format csv|json|md]", "output");
+    p("  ttt outlook sync [--date D] [--from D] [--to D] [--dry-run]", "output");
+    p("  ttt clear", "output");
+    p("  ttt reset   (clears all demo state + localStorage)", "output");
+    p("", "output");
+    p("This is a browser simulation. Install ttt for real file-based tracking.", "muted");
+    p("Source: https://github.com/Tiliavir/trivial-time-tracker", "muted");
+  }
 
-      print(`Syncing Outlook events (${fromStr} → ${toStr})${dryRun ? " [dry-run]" : ""}...`, "info");
-      print("", "output");
-      print("  (This is a browser simulation — no real Microsoft Graph API call is made.)", "muted");
-      print("", "output");
-      print("  ✓ Imported: Architecture Board (1h 30m)", "success");
-      print("  ✓ Imported: 1:1 with CTO (30m)", "success");
-      print("  – Skipped:  Weekly Sync (already exists)", "muted");
-      print("", "output");
-      print("Summary:", "info");
-      print("  2 imported", "output");
-      print("  1 skipped", "output");
-      print("  0 updated", "output");
-    },
-
-    help() {
-      print("Available commands:", "info");
-      print("  start <project> [--task T] [--comment C] [--tags a,b]", "output");
-      print("  stop [--comment C]", "output");
-      print("  status", "output");
-      print("  list [--today|--week]", "output");
-      print("  report [--week] [--format md|csv|json]", "output");
-      print("  export [--format csv|json|md]", "output");
-      print("  outlook sync [--date D] [--from D] [--to D] [--dry-run]", "output");
-      print("  clear", "output");
-      print("", "output");
-      print('Tip: This is a browser simulation. Install ttt to use with real files.', "muted");
-    },
-
-    clear() {
-      terminal.innerHTML = "";
+  // ── Dispatch ──────────────────────────────────────────────────────────
+  const dispatch = {
+    start:   cmdStart,
+    stop:    cmdStop,
+    status:  cmdStatus,
+    list:    cmdList,
+    report:  cmdReport,
+    export:  cmdExport,
+    outlook: cmdOutlook,
+    help:    cmdHelp,
+    clear:   () => TerminalModule.clear(),
+    reset: () => {
+      StorageModule.reset();
+      TreeModule.render();
+      p("Demo state cleared.", "warn");
     },
   };
 
-  // ── Input handling ────────────────────────────────────────────────────────
   function run(raw) {
     const trimmed = raw.trim();
     if (!trimmed) return;
 
-    history.unshift(trimmed);
-    histIdx = -1;
+    // ── Command filtering: must start with "ttt" ──────────────────────
+    if (!trimmed.startsWith("ttt")) {
+      p(`> ${trimmed}`, "prompt");
+      p(`Ignored (must start with 'ttt')`, "ignored");
+      return;
+    }
 
-    printPrompt(trimmed);
+    // Strip "ttt" prefix and tokenise (handle quoted strings)
+    const rest   = trimmed.slice(3).trim();
+    p(`> ttt ${rest}`, "prompt");
 
-    const tokens = trimmed.match(/(?:[^\s"]+|"[^"]*")+/g)
-      .map(t => t.replace(/^"|"$/g, ""));
-    const sub = tokens[0];
-    const rest = tokens.slice(1);
+    if (!rest) {
+      // bare "ttt" with no subcommand
+      p("ttt – Trivial Time Tracker", "info");
+      p('Run "ttt help" for usage.', "muted");
+      return;
+    }
 
-    if (commands[sub]) {
+    const tokens = (rest.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [])
+      .map(t => t.replace(/^["']|["']$/g, ""));
+    const sub  = tokens[0];
+    const args = tokens.slice(1);
+
+    if (dispatch[sub]) {
       try {
-        commands[sub](rest);
-      } catch (e) {
-        print("Error: " + e.message, "error");
+        dispatch[sub](args);
+      } catch (err) {
+        p("Error: " + err.message, "error");
       }
     } else {
-      print(`Error: unknown command "${sub}". Run "help" for usage.`, "error");
+      p(`Error: unknown command "${sub}". Run "ttt help" for usage.`, "error");
     }
+
+    // After any mutating command, refresh the tree
+    TreeModule.render();
   }
 
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      const val = input.value;
-      input.value = "";
-      run(val);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (histIdx < history.length - 1) {
-        histIdx++;
-        input.value = history[histIdx];
-      }
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (histIdx > 0) {
-        histIdx--;
-        input.value = history[histIdx];
-      } else {
-        histIdx = -1;
-        input.value = "";
-      }
-    }
+  return { run };
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// App initialisation
+// ═══════════════════════════════════════════════════════════════════════════
+(function init() {
+  // 1. Init storage (loads from localStorage)
+  StorageModule.init();
+
+  // 2. Init tree panel
+  const treeContainer = document.getElementById("tree-content");
+  TreeModule.init(treeContainer, (fileNode, path) => {
+    EditorModule.loadFile(fileNode, ".ttt/" + path);
+    document.getElementById("editor-filename").textContent = ".ttt/" + path;
   });
+  TreeModule.render();
 
-  // ── Welcome message ───────────────────────────────────────────────────────
-  print("Welcome to the ttt interactive demo!", "success");
-  print('Type "help" to see available commands.', "muted");
-  print("", "output");
+  // 3. Init Monaco editor
+  const filenameLabel = document.getElementById("editor-filename");
+  EditorModule.init("editor-container", filenameLabel);
 
-  input.focus();
+  // 4. Init terminal (wires input to CLIAdapter.run)
+  TerminalModule.init("terminal-output", "cmd-input", CLIAdapter.run);
+
+  // 5. Welcome message
+  TerminalModule.print("Welcome to the ttt interactive demo!", "success");
+  TerminalModule.print('Type "ttt help" to see available commands.', "muted");
+  TerminalModule.print("Commands must start with ttt – anything else is ignored.", "muted");
+  TerminalModule.print("", "output");
+
+  // 6. Focus input
+  document.getElementById("cmd-input").focus();
+
+  // 7. Resize Monaco when window resizes
+  window.addEventListener("resize", () => EditorModule.layout());
 })();
 </script>
 </body>
