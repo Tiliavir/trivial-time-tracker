@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ttt – Trivial Time Tracker</title>
+  <style>
+    :root {
+      --bg: #1e1e2e;
+      --surface: #181825;
+      --border: #313244;
+      --text: #cdd6f4;
+      --subtext: #a6adc8;
+      --green: #a6e3a1;
+      --yellow: #f9e2af;
+      --red: #f38ba8;
+      --blue: #89b4fa;
+      --mauve: #cba6f7;
+      --teal: #94e2d5;
+      --prompt: #89dceb;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Fira Code", "Cascadia Code", "Consolas", "Courier New", monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      color: var(--mauve);
+      letter-spacing: 0.05em;
+    }
+
+    header p {
+      color: var(--subtext);
+      margin-top: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    .badges {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-top: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .badges a img { height: 20px; }
+
+    .terminal-wrapper {
+      width: 100%;
+      max-width: 760px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      border: 1px solid var(--border);
+    }
+
+    .terminal-bar {
+      background: var(--surface);
+      padding: 0.6rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-bar .dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+    }
+    .dot-red    { background: #ff5f57; }
+    .dot-yellow { background: #febc2e; }
+    .dot-green  { background: #28c840; }
+
+    .terminal-bar span {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--subtext);
+    }
+
+    #terminal {
+      background: var(--bg);
+      padding: 1rem;
+      height: 400px;
+      overflow-y: auto;
+      font-size: 0.875rem;
+      line-height: 1.6;
+    }
+
+    .line { white-space: pre-wrap; word-break: break-word; }
+    .line.prompt   { color: var(--prompt); }
+    .line.output   { color: var(--text); }
+    .line.success  { color: var(--green); }
+    .line.warn     { color: var(--yellow); }
+    .line.error    { color: var(--red); }
+    .line.info     { color: var(--blue); }
+    .line.muted    { color: var(--subtext); }
+
+    .input-row {
+      display: flex;
+      align-items: center;
+      padding: 0.6rem 1rem;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      gap: 0.4rem;
+    }
+
+    .input-row label {
+      color: var(--prompt);
+      font-size: 0.875rem;
+      white-space: nowrap;
+    }
+
+    #cmd-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.875rem;
+      caret-color: var(--mauve);
+    }
+
+    .hint {
+      text-align: center;
+      color: var(--subtext);
+      font-size: 0.78rem;
+      margin-top: 0.75rem;
+    }
+
+    section.docs {
+      width: 100%;
+      max-width: 760px;
+      margin-top: 3rem;
+    }
+
+    section.docs h2 {
+      color: var(--mauve);
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+    }
+
+    section.docs table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    section.docs th, section.docs td {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section.docs th { color: var(--blue); }
+    section.docs code {
+      background: var(--surface);
+      padding: 0.1em 0.4em;
+      border-radius: 4px;
+      color: var(--teal);
+    }
+
+    footer {
+      margin-top: 3rem;
+      font-size: 0.78rem;
+      color: var(--subtext);
+      text-align: center;
+    }
+    footer a { color: var(--blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>ttt &mdash; Trivial Time Tracker</h1>
+  <p>A single-binary, file-based CLI time tracker for developers.</p>
+  <div class="badges">
+    <a href="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/ci.yml">
+      <img src="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/ci.yml/badge.svg" alt="CI" />
+    </a>
+    <a href="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/codeql.yml">
+      <img src="https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/codeql.yml/badge.svg" alt="CodeQL" />
+    </a>
+    <a href="https://github.com/Tiliavir/trivial-time-tracker">
+      <img src="https://img.shields.io/badge/license-MIT-blue" alt="License MIT" />
+    </a>
+  </div>
+</header>
+
+<div class="terminal-wrapper">
+  <div class="terminal-bar">
+    <div class="dot dot-red"></div>
+    <div class="dot dot-yellow"></div>
+    <div class="dot dot-green"></div>
+    <span>ttt demo &mdash; interactive</span>
+  </div>
+  <div id="terminal" role="log" aria-live="polite"></div>
+  <div class="input-row">
+    <label for="cmd-input">$ ttt&nbsp;</label>
+    <input id="cmd-input" type="text" autocomplete="off" autocorrect="off"
+           spellcheck="false" placeholder="type a command…" aria-label="command input" />
+  </div>
+</div>
+<p class="hint">Try: <code>start ECM --task "REST refactor"</code>, <code>status</code>, <code>stop</code>, <code>list</code>, <code>report</code>, <code>help</code></p>
+
+<section class="docs">
+  <h2>Commands</h2>
+  <table>
+    <thead>
+      <tr><th>Command</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>ttt start &lt;project&gt; [--task T] [--comment C] [--tags a,b]</code></td><td>Start a new time entry</td></tr>
+      <tr><td><code>ttt stop [--comment C]</code></td><td>Stop the active timer</td></tr>
+      <tr><td><code>ttt status</code></td><td>Show running timer or today's total</td></tr>
+      <tr><td><code>ttt list [--today|--week]</code></td><td>List time entries</td></tr>
+      <tr><td><code>ttt report [--week] [--format md|csv|json]</code></td><td>Aggregated weekly report</td></tr>
+      <tr><td><code>ttt export [--format csv|json|md]</code></td><td>Export entries to stdout</td></tr>
+    </tbody>
+  </table>
+
+  <h2 style="margin-top:2rem">Installation</h2>
+  <table>
+    <thead><tr><th>Method</th><th>Command</th></tr></thead>
+    <tbody>
+      <tr><td>Go install</td><td><code>go install github.com/Tiliavir/trivial-time-tracker@latest</code></td></tr>
+      <tr><td>Build from source</td><td><code>git clone … &amp;&amp; go build -o ttt .</code></td></tr>
+      <tr><td>Download binary</td><td>See <a href="https://github.com/Tiliavir/trivial-time-tracker/releases">Releases</a></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer>
+  <p>
+    <a href="https://github.com/Tiliavir/trivial-time-tracker">GitHub</a> &middot;
+    <a href="https://github.com/Tiliavir/trivial-time-tracker/releases">Releases</a> &middot;
+    MIT License
+  </p>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── In-memory state ───────────────────────────────────────────────────────
+  let active = null;   // { project, task, comment, tags, start }
+  let entries = [];    // { project, task, comment, tags, start, end, duration }
+  let history = [];
+  let histIdx  = -1;
+
+  const terminal = document.getElementById("terminal");
+  const input    = document.getElementById("cmd-input");
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function now() { return new Date(); }
+
+  function fmt(d) {
+    return d.toTimeString().slice(0, 8);
+  }
+
+  function fmtDate(d) {
+    return d.toISOString().slice(0, 10);
+  }
+
+  function elapsed(start, end) {
+    const secs = Math.round((end - start) / 1000);
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  function formatDur(secs) {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m`;
+    return `${secs}s`;
+  }
+
+  function parseFlagsAndArgs(tokens) {
+    const flags = {};
+    const positional = [];
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].startsWith("--")) {
+        const key = tokens[i].slice(2);
+        if (i + 1 < tokens.length && !tokens[i + 1].startsWith("--")) {
+          flags[key] = tokens[++i];
+        } else {
+          flags[key] = true;
+        }
+      } else {
+        positional.push(tokens[i]);
+      }
+    }
+    return { flags, positional };
+  }
+
+  // ── Terminal output ───────────────────────────────────────────────────────
+  function print(text, cls) {
+    const div = document.createElement("div");
+    div.className = "line " + (cls || "output");
+    div.textContent = text;
+    terminal.appendChild(div);
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  function printPrompt(cmd) {
+    print("$ ttt " + cmd, "prompt");
+  }
+
+  // ── Commands ──────────────────────────────────────────────────────────────
+  const commands = {
+
+    start(tokens) {
+      const { flags, positional } = parseFlagsAndArgs(tokens);
+      if (!positional.length) {
+        print('Error: requires exactly 1 arg(s), only received 0', "error");
+        print('Usage: ttt start <project>', "muted");
+        return;
+      }
+      const project = positional[0];
+      const n = now();
+
+      if (active) {
+        const dur = Math.round((n - active.start) / 1000);
+        entries.push({ ...active, end: n, duration: dur });
+        print(`Warning: auto-stopping active timer for project "${active.project}"`, "warn");
+        active = null;
+      }
+
+      active = {
+        project,
+        task: flags.task || null,
+        comment: flags.comment || null,
+        tags: flags.tags ? flags.tags.split(",").map(t => t.trim()) : [],
+        start: n,
+      };
+
+      print(`Started timer for project "${project}" at ${fmt(n)}`, "success");
+    },
+
+    stop(tokens) {
+      const { flags } = parseFlagsAndArgs(tokens);
+      const n = now();
+
+      if (!active) {
+        print("No active timer to stop.", "error");
+        return;
+      }
+
+      const comment = flags.comment || null;
+      if (comment && active.comment) {
+        active.comment = active.comment + "\n" + comment;
+      } else if (comment) {
+        active.comment = comment;
+      }
+
+      const dur = Math.round((n - active.start) / 1000);
+      entries.push({ ...active, end: n, duration: dur });
+      print(`Stopped timer for project "${active.project}". Elapsed: ${elapsed(active.start, n)}`, "success");
+      active = null;
+    },
+
+    status() {
+      const n = now();
+      if (active) {
+        const secs = Math.round((n - active.start) / 1000);
+        const h = String(Math.floor(secs / 3600)).padStart(2, "0");
+        const m = String(Math.floor((secs % 3600) / 60)).padStart(2, "0");
+        const s = String(secs % 60).padStart(2, "0");
+        print("Running:", "info");
+        print(`  Project: ${active.project}`, "output");
+        if (active.task) print(`  Task: ${active.task}`, "output");
+        print(`  Since: ${active.start.toTimeString().slice(0, 5)}`, "output");
+        print(`  Elapsed: ${h}:${m}:${s}`, "output");
+      } else {
+        const today = fmtDate(n);
+        const todayEntries = entries.filter(e => fmtDate(e.start) === today);
+        const total = todayEntries.reduce((a, e) => a + e.duration, 0);
+        print("No active timer.", "muted");
+        print(`Today: ${formatDur(total)} logged.`, "output");
+      }
+    },
+
+    list(tokens) {
+      const { flags } = parseFlagsAndArgs(tokens);
+      const n = now();
+      let filtered;
+
+      if (flags.week) {
+        const day = n.getDay();
+        const daysFromMon = (day === 0 ? 6 : day - 1);
+        const mon = new Date(n);
+        mon.setDate(n.getDate() - daysFromMon);
+        mon.setHours(0, 0, 0, 0);
+        filtered = entries.filter(e => e.start >= mon);
+      } else {
+        const startOfDay = new Date(n);
+        startOfDay.setHours(0, 0, 0, 0);
+        filtered = entries.filter(e => e.start >= startOfDay);
+      }
+
+      if (active) filtered = [...filtered, { ...active, end: null }];
+
+      if (!filtered.length) {
+        print("No entries found.", "muted");
+        return;
+      }
+
+      let lastDay = "";
+      for (const e of filtered) {
+        const day = fmtDate(e.start);
+        if (day !== lastDay) {
+          print(day, "info");
+          lastDay = day;
+        }
+        const startStr = e.start.toTimeString().slice(0, 5);
+        const endStr   = e.end ? e.end.toTimeString().slice(0, 5) : "ongoing";
+        const durStr   = e.duration != null ? ` (${formatDur(e.duration)})` : "";
+        const taskStr  = e.task ? "  " + e.task : "";
+        print(`${startStr}–${endStr}  ${e.project}${taskStr}${durStr}`, "output");
+      }
+    },
+
+    report(tokens) {
+      const { flags } = parseFlagsAndArgs(tokens);
+      const n = now();
+      const format = flags.format || "md";
+
+      const day = n.getDay();
+      const daysFromMon = (day === 0 ? 6 : day - 1);
+      const mon = new Date(n); mon.setDate(n.getDate() - daysFromMon); mon.setHours(0,0,0,0);
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6); sun.setHours(23,59,59,999);
+
+      const year = n.getFullYear();
+      const week = (() => {
+        const d = new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()));
+        d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+        const y = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d - y) / 86400000) + 1) / 7);
+      })();
+      const label = `${year}-W${String(week).padStart(2, "0")}`;
+
+      const totals = {};
+      for (const e of entries) {
+        if (e.start >= mon && e.start <= sun) {
+          totals[e.project] = (totals[e.project] || 0) + e.duration;
+        }
+      }
+      const order = Object.keys(totals).sort();
+      const grand = order.reduce((a, p) => a + totals[p], 0);
+
+      if (format === "csv") {
+        print("project,duration_minutes", "output");
+        for (const p of order) print(`${p},${Math.floor(totals[p] / 60)}`, "output");
+      } else if (format === "json") {
+        print("{", "output");
+        print(`  "week": "${label}",`, "output");
+        print(`  "projects": [`, "output");
+        order.forEach((p, i) => {
+          const comma = i < order.length - 1 ? "," : "";
+          print(`    {"project": "${p}", "duration_minutes": ${Math.floor(totals[p] / 60)}}${comma}`, "output");
+        });
+        print(`  ],`, "output");
+        print(`  "total_minutes": ${Math.floor(grand / 60)}`, "output");
+        print("}", "output");
+      } else {
+        print(`Week ${label}`, "info");
+        print("--------------------------------", "muted");
+        for (const p of order) {
+          print(p.padEnd(20) + formatDur(totals[p]), "output");
+        }
+        print("--------------------------------", "muted");
+        print("Total".padEnd(20) + formatDur(grand), "success");
+      }
+    },
+
+    export(tokens) {
+      const { flags } = parseFlagsAndArgs(tokens);
+      this.list(flags.week ? ["--week"] : []);
+    },
+
+    help() {
+      print("Available commands:", "info");
+      print("  start <project> [--task T] [--comment C] [--tags a,b]", "output");
+      print("  stop [--comment C]", "output");
+      print("  status", "output");
+      print("  list [--today|--week]", "output");
+      print("  report [--week] [--format md|csv|json]", "output");
+      print("  export [--format csv|json|md]", "output");
+      print("  clear", "output");
+      print("", "output");
+      print('Tip: This is a browser simulation. Install ttt to use with real files.', "muted");
+    },
+
+    clear() {
+      terminal.innerHTML = "";
+    },
+  };
+
+  // ── Input handling ────────────────────────────────────────────────────────
+  function run(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+
+    history.unshift(trimmed);
+    histIdx = -1;
+
+    printPrompt(trimmed);
+
+    const tokens = trimmed.match(/(?:[^\s"]+|"[^"]*")+/g)
+      .map(t => t.replace(/^"|"$/g, ""));
+    const sub = tokens[0];
+    const rest = tokens.slice(1);
+
+    if (commands[sub]) {
+      try {
+        commands[sub](rest);
+      } catch (e) {
+        print("Error: " + e.message, "error");
+      }
+    } else {
+      print(`Error: unknown command "${sub}". Run "help" for usage.`, "error");
+    }
+  }
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const val = input.value;
+      input.value = "";
+      run(val);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (histIdx < history.length - 1) {
+        histIdx++;
+        input.value = history[histIdx];
+      }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (histIdx > 0) {
+        histIdx--;
+        input.value = history[histIdx];
+      } else {
+        histIdx = -1;
+        input.value = "";
+      }
+    }
+  });
+
+  // ── Welcome message ───────────────────────────────────────────────────────
+  print("Welcome to the ttt interactive demo!", "success");
+  print('Type "help" to see available commands.', "muted");
+  print("", "output");
+
+  input.focus();
+})();
+</script>
+</body>
+</html>

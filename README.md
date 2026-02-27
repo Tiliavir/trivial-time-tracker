@@ -1,6 +1,12 @@
 # trivial-time-tracker
 
+[![CI](https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/codeql.yml/badge.svg)](https://github.com/Tiliavir/trivial-time-tracker/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 **ttt** – Trivial Time Tracker: a single-binary, file-based command-line time tracker.
+
+**[▶ Try the interactive demo](https://tiliavir.github.io/trivial-time-tracker/)**
 
 ## Features
 
@@ -87,3 +93,21 @@ Each daily file contains JSON entries:
 | `0`  | Success      |
 | `1`  | User error   |
 | `2`  | Storage error|
+
+## Development
+
+```bash
+# Build
+go build -o ttt .
+
+# Run tests
+go test ./...
+
+# Vet
+go vet ./...
+```
+
+## Contributing
+
+Pull requests are welcome. Please open an issue first to discuss what you would like to change.
+
