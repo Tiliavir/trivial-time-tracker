@@ -219,7 +219,7 @@
            spellcheck="false" placeholder="type a command…" aria-label="command input" />
   </div>
 </div>
-<p class="hint">Try: <code>start ECM --task "REST refactor"</code>, <code>status</code>, <code>stop</code>, <code>list</code>, <code>report</code>, <code>help</code></p>
+<p class="hint">Try: <code>start ECM --task "REST refactor"</code>, <code>status</code>, <code>stop</code>, <code>list</code>, <code>report</code>, <code>outlook sync</code>, <code>help</code></p>
 
 <section class="docs">
   <h2>Commands</h2>
@@ -234,6 +234,7 @@
       <tr><td><code>ttt list [--today|--week]</code></td><td>List time entries</td></tr>
       <tr><td><code>ttt report [--week] [--format md|csv|json]</code></td><td>Aggregated weekly report</td></tr>
       <tr><td><code>ttt export [--format csv|json|md]</code></td><td>Export entries to stdout</td></tr>
+      <tr><td><code>ttt outlook sync [--date D] [--from D] [--to D] [--dry-run]</code></td><td>Sync Outlook calendar events (simulated in demo)</td></tr>
     </tbody>
   </table>
 
@@ -501,6 +502,33 @@
       this.list(flags.week ? ["--week"] : []);
     },
 
+    outlook(tokens) {
+      const sub = tokens[0];
+      if (sub !== "sync") {
+        print(`Error: unknown outlook subcommand "${sub || ""}". Try: outlook sync`, "error");
+        return;
+      }
+      const { flags } = parseFlagsAndArgs(tokens.slice(1));
+      const n = now();
+      const dateStr = flags.date || fmtDate(n);
+      const fromStr = flags.from || dateStr;
+      const toStr   = flags.to   || dateStr;
+      const dryRun  = !!flags["dry-run"];
+
+      print(`Syncing Outlook events (${fromStr} → ${toStr})${dryRun ? " [dry-run]" : ""}...`, "info");
+      print("", "output");
+      print("  (This is a browser simulation — no real Microsoft Graph API call is made.)", "muted");
+      print("", "output");
+      print("  ✓ Imported: Architecture Board (1h 30m)", "success");
+      print("  ✓ Imported: 1:1 with CTO (30m)", "success");
+      print("  – Skipped:  Weekly Sync (already exists)", "muted");
+      print("", "output");
+      print("Summary:", "info");
+      print("  2 imported", "output");
+      print("  1 skipped", "output");
+      print("  0 updated", "output");
+    },
+
     help() {
       print("Available commands:", "info");
       print("  start <project> [--task T] [--comment C] [--tags a,b]", "output");
@@ -509,6 +537,7 @@
       print("  list [--today|--week]", "output");
       print("  report [--week] [--format md|csv|json]", "output");
       print("  export [--format csv|json|md]", "output");
+      print("  outlook sync [--date D] [--from D] [--to D] [--dry-run]", "output");
       print("  clear", "output");
       print("", "output");
       print('Tip: This is a browser simulation. Install ttt to use with real files.', "muted");

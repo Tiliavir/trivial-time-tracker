@@ -1,0 +1,21 @@
+name: PR
+
+on:
+  pull_request:
+
+jobs:
+  dependabot-automerge:
+    name: Dependabot Auto Merge
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Dependabot Auto Merge
+        if: ${{ github.actor == 'dependabot[bot]' && github.event_name == 'pull_request' }}
+        run: |
+          echo "$GITHUB_CONTEXT"
+          gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GH_ACTION_MERGER_TOKEN }}
