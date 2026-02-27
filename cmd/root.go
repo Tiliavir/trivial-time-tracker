@@ -29,4 +29,5 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(reportCmd)
 	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(outlookCmd)
 }

@@ -5,6 +5,7 @@ import "time"
 // Entry represents a single tracked time entry.
 type Entry struct {
 	ID              string     `json:"id"`
+	ExternalID      string     `json:"external_id,omitempty"`
 	Project         string     `json:"project"`
 	Task            *string    `json:"task"`
 	Comment         *string    `json:"comment"`
