@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        run: |
+          GOOS=linux   GOARCH=amd64  go build -ldflags="-s -w" -o ttt-linux-amd64   .
+          GOOS=linux   GOARCH=arm64  go build -ldflags="-s -w" -o ttt-linux-arm64   .
+          GOOS=darwin  GOARCH=amd64  go build -ldflags="-s -w" -o ttt-darwin-amd64  .
+          GOOS=darwin  GOARCH=arm64  go build -ldflags="-s -w" -o ttt-darwin-arm64  .
+          GOOS=windows GOARCH=amd64  go build -ldflags="-s -w" -o ttt-windows-amd64.exe .
+
+      - name: Generate checksums
+        run: sha256sum ttt-* > checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ttt-linux-amd64
+            ttt-linux-arm64
+            ttt-darwin-amd64
+            ttt-darwin-arm64
+            ttt-windows-amd64.exe
+            checksums.txt
+          generate_release_notes: true
