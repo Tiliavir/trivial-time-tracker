@@ -113,7 +113,7 @@ func stopEntry(base string, entry *model.Entry, entryDay time.Time, stopTime tim
 }
 
 // splitAcrossMidnight splits a cross-midnight entry into two entries.
-func splitAcrossMidnight(base string, entry *model.Entry, entryDay time.Time, stopTime time.Time, _ *string) error {
+func splitAcrossMidnight(base string, entry *model.Entry, entryDay time.Time, stopTime time.Time, comment *string) error {
 	// First segment ends at 23:59:59 of the start day.
 	endOfFirst := timecalc.EndOfDay(entry.Start)
 	dur1 := int64(endOfFirst.Sub(entry.Start).Seconds())

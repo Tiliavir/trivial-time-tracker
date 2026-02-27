@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -106,12 +107,12 @@ func csvEscape(s string) string {
 		return s
 	}
 	// Escape internal double quotes by doubling them.
-	escaped := ""
+	var b strings.Builder
 	for _, c := range s {
 		if c == '"' {
-			escaped += "\""
+			b.WriteRune('"')
 		}
-		escaped += string(c)
+		b.WriteRune(c)
 	}
-	return `"` + escaped + `"`
+	return `"` + b.String() + `"`
 }

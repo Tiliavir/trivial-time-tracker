@@ -1,8 +1,9 @@
 package timecalc
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"time"
 )
 
@@ -11,7 +12,8 @@ func GenerateID(t time.Time) string {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	suffix := make([]byte, 5)
 	for i := range suffix {
-		suffix[i] = chars[rand.Intn(len(chars))]
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
+		suffix[i] = chars[n.Int64()]
 	}
 	return fmt.Sprintf("%s-%s", t.Format("20060102-150405"), string(suffix))
 }
