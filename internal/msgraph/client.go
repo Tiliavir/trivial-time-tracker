@@ -7,12 +7,39 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
-
-	"golang.org/x/oauth2"
 )
 
 const graphBaseURL = "https://graph.microsoft.com/v1.0"
+
+// tokenTransport is an http.RoundTripper that injects a Bearer token and
+// refreshes it automatically when it expires.
+type tokenTransport struct {
+	mu  sync.Mutex
+	tok *Token
+	cfg *oauthConfig
+}
+
+func (t *tokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.mu.Lock()
+	tok := t.tok
+	t.mu.Unlock()
+
+	if !tok.Valid() && tok.RefreshToken != "" {
+		if newTok, err := refreshAccessToken(req.Context(), t.cfg, tok.RefreshToken); err == nil {
+			_ = saveToken(newTok)
+			t.mu.Lock()
+			t.tok = newTok
+			tok = newTok
+			t.mu.Unlock()
+		}
+	}
+
+	req2 := req.Clone(req.Context())
+	req2.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+	return http.DefaultTransport.RoundTrip(req2)
+}
 
 // Client is an authenticated Microsoft Graph API client.
 type Client struct {
@@ -20,26 +47,12 @@ type Client struct {
 }
 
 // NewClient creates a new Graph API client using the provided token and config.
-func NewClient(ctx context.Context, tok *oauth2.Token, cfg *oauth2.Config) *Client {
-	ts := cfg.TokenSource(ctx, tok)
+func NewClient(_ context.Context, tok *Token, cfg *oauthConfig) *Client {
 	return &Client{
-		httpClient: oauth2.NewClient(ctx, &savingTokenSource{ts: ts}),
+		httpClient: &http.Client{
+			Transport: &tokenTransport{tok: tok, cfg: cfg},
+		},
 	}
-}
-
-// savingTokenSource wraps a TokenSource and persists refreshed tokens.
-type savingTokenSource struct {
-	ts oauth2.TokenSource
-}
-
-func (s *savingTokenSource) Token() (*oauth2.Token, error) {
-	tok, err := s.ts.Token()
-	if err != nil {
-		return nil, err
-	}
-	// Best-effort save; ignore errors.
-	_ = saveToken(tok)
-	return tok, nil
 }
 
 // CalendarEvent represents a Microsoft Graph calendar event.

@@ -19,8 +19,10 @@
 
 ## Installation
 
+Install directly as `ttt`:
+
 ```bash
-go install github.com/Tiliavir/trivial-time-tracker@latest
+go install github.com/Tiliavir/trivial-time-tracker/cmd/ttt@latest
 ```
 
 Or build from source:

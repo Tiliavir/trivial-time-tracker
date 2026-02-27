@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"golang.org/x/oauth2"
 )
 
 var requiredScopes = []string{
@@ -28,22 +26,19 @@ func tokenFilePath() (string, error) {
 	return filepath.Join(home, ".ttt", "auth", "msgraph_tokens.json"), nil
 }
 
-// oauth2Config returns the oauth2.Config for Microsoft Graph using the
+// newOAuthConfig returns the oauthConfig for Microsoft Graph using the
 // provided tenant and client IDs.
-func oauth2Config(tenantID, clientID string) *oauth2.Config {
-	return &oauth2.Config{
-		ClientID: clientID,
-		Scopes:   requiredScopes,
-		Endpoint: oauth2.Endpoint{
-			DeviceAuthURL: msEndpoint(tenantID, "devicecode"),
-			TokenURL:      msEndpoint(tenantID, "token"),
-			AuthStyle:     oauth2.AuthStyleInParams,
-		},
+func newOAuthConfig(tenantID, clientID string) *oauthConfig {
+	return &oauthConfig{
+		ClientID:      clientID,
+		Scopes:        requiredScopes,
+		DeviceAuthURL: msEndpoint(tenantID, "devicecode"),
+		TokenURL:      msEndpoint(tenantID, "token"),
 	}
 }
 
 // loadToken loads a previously saved token from disk.
-func loadToken() (*oauth2.Token, error) {
+func loadToken() (*Token, error) {
 	path, err := tokenFilePath()
 	if err != nil {
 		return nil, err
@@ -55,7 +50,7 @@ func loadToken() (*oauth2.Token, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading token file: %w", err)
 	}
-	var tok oauth2.Token
+	var tok Token
 	if err := json.Unmarshal(data, &tok); err != nil {
 		return nil, fmt.Errorf("corrupt token file (delete %s to re-authenticate): %w", path, err)
 	}
@@ -63,7 +58,7 @@ func loadToken() (*oauth2.Token, error) {
 }
 
 // saveToken persists a token to disk.
-func saveToken(tok *oauth2.Token) error {
+func saveToken(tok *Token) error {
 	path, err := tokenFilePath()
 	if err != nil {
 		return err
@@ -86,12 +81,12 @@ func saveToken(tok *oauth2.Token) error {
 	return nil
 }
 
-// GetHTTPClient returns an authenticated HTTP client for Microsoft Graph.
+// GetHTTPClient returns an authenticated token and config for Microsoft Graph.
 // It loads saved tokens, refreshes them if needed, or initiates a new
 // device code flow if no valid token is available.
 // tenantID and clientID are read from ~/.ttt/config.json.
-func GetHTTPClient(ctx context.Context, tenantID, clientID string) (*oauth2.Token, *oauth2.Config, error) {
-	cfg := oauth2Config(tenantID, clientID)
+func GetHTTPClient(ctx context.Context, tenantID, clientID string) (*Token, *oauthConfig, error) {
+	cfg := newOAuthConfig(tenantID, clientID)
 
 	tok, err := loadToken()
 	if err != nil {
@@ -106,8 +101,7 @@ func GetHTTPClient(ctx context.Context, tenantID, clientID string) (*oauth2.Toke
 
 	// Try to refresh.
 	if tok != nil && tok.RefreshToken != "" {
-		ts := cfg.TokenSource(ctx, tok)
-		refreshed, err := ts.Token()
+		refreshed, err := refreshAccessToken(ctx, cfg, tok.RefreshToken)
 		if err == nil {
 			if err2 := saveToken(refreshed); err2 != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not save refreshed token: %v\n", err2)
@@ -118,18 +112,18 @@ func GetHTTPClient(ctx context.Context, tenantID, clientID string) (*oauth2.Toke
 	}
 
 	// Device code flow.
-	resp, err := cfg.DeviceAuth(ctx)
+	dc, err := requestDeviceCode(ctx, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("device auth request failed: %w", err)
 	}
 
 	fmt.Println()
 	fmt.Println("To sign in, use a web browser to open the page:")
-	fmt.Printf("  %s\n", resp.VerificationURI)
-	fmt.Printf("Enter the code: %s\n", resp.UserCode)
+	fmt.Printf("  %s\n", dc.VerificationURI)
+	fmt.Printf("Enter the code: %s\n", dc.UserCode)
 	fmt.Println()
 
-	newTok, err := cfg.DeviceAccessToken(ctx, resp)
+	newTok, err := pollForToken(ctx, cfg, dc.DeviceCode, dc.Interval)
 	if err != nil {
 		return nil, nil, fmt.Errorf("device authentication failed: %w", err)
 	}
