@@ -6,7 +6,7 @@
 
 **ttt** – Trivial Time Tracker: a single-binary, file-based command-line time tracker.
 
-**[▶ Try the interactive demo](https://tiliavir.github.io/trivial-time-tracker/)**
+**[▶ Try the interactive demo](https://tiliavir.github.io/trivial-time-tracker/docs/)**
 
 ## Features
 
